@@ -136,6 +136,55 @@ backend matrix
   server matrix 127.0.0.1:8008
 ```
 
+### relayd (OpenBSD)
+
+```
+table <httpd> { 127.0.0.1 }
+table <synapse> { 127.0.0.1 }
+
+http protocol federation {
+        tls keypair "matrix.example.com"
+        match header set "X-Forwarded-For" value "$REMOTE_ADDR"  
+        pass
+}
+
+http protocol https_proxy {
+        tls keypair "matrix.example.com"
+        
+        # This allows automatic certificate renewal:
+        pass request quick path "/.well-known/acme-challenge/*" \
+            forward to <httpd>
+            
+        # Delegation (optional):
+        pass request quick path "/.well-known/matrix/*" \
+            forward to <httpd>
+            
+        match header set "X-Forwarded-For" value "$REMOTE_ADDR"        
+        pass request quick header "Host" value "matrix.example.com" \
+            forward to <synapse>
+
+        # Some clients include the port number in the Host header:
+        pass request quick header "Host" value "matrix.example.com:443" \
+            forward to <synapse>
+
+        # Pass everything else to <httpd>:
+        pass forward to <httpd>
+}
+
+relay reverse_proxy {
+        listen on egress port 443 tls
+            protocol https_proxy
+            forward to <httpd> port 80 
+            forward to <synapse>  port 8008
+}
+
+relay federation {
+        listen on egress port 8448 tls
+            protocol federation 
+            forward to <synapse> port 8008
+}
+```
+
 ## Homeserver Configuration
 
 You will also want to set `bind_addresses: ['127.0.0.1']` and
